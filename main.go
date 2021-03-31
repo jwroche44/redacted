@@ -1,68 +1,91 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
-
-	"github.com/jwroche44/redacted/sanitizer"
+	"strings"
 )
 
+const REPLACEMENT_STR string = "XXXX"
+
 func main() {
-	// Parse the inputs
-	keyf, inf, outf, err := processInputs()
-	if err != nil {
-		log.Fatal(err)
+	// Get the phrases to be redacted
+	var phrases []string
+
+	// 0th arg = executable file name
+	// 1->(n-1) are the phrases
+	// last argument should be the file name to be processed
+	phrases = append(phrases, os.Args[1:len(os.Args)-1]...)
+
+	// Sanitize the phrases (to-lower and remove trailing commas)
+	for i, phrase := range phrases {
+		// Check for trailing comma
+		if phrase[len(phrase)-1] == ',' {
+			phrase = phrase[:len(phrase)-1] // Strip the last character
+		}
+
+		// Verify someone isn't trying to dupe us by providing the replacement string as a key
+		if strings.ToUpper(phrase) == REPLACEMENT_STR {
+			log.Fatalf("The replacement string \"%s\" can not be used as a key in any combination of capitalization", REPLACEMENT_STR)
+		}
+
+		phrases[i] = phrase
 	}
 
-	// Make a sanitizer that we can use for this
-	var s *sanitizer.Sanitizer
+	// Get the file contents that should be passed in as an argument
+	file_contents := os.Args[len(os.Args)-1]
 
-	// Set the keywords
-	if err = s.LoadKeywordsFromFile(keyf); err != nil {
-		log.Fatal(err)
-	}
-
-	// Run the Sanitizer on the input file
-	if err = s.SanitizeFile(inf, outf); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Printf("Sanitization completed successfuly.")
+	fmt.Println(SanitizeFile(phrases, file_contents))
 }
 
-// processInputs will take the command line arguments as input, validate and return their values
-func processInputs() (keyFile string, inFile string, outFile string, err error) {
-	keyFile = *flag.String("k", "", "The path to the file containing keywords for redacting")
-	inFile = *flag.String("i", "", "The path to the input file to be sanitized")
-	outFile = *flag.String("o", "./output.txt", "The path where the sanitized file should be placed")
+// SanitizeFile will take keys and text as input and redact any keys from the text. The resulting data will be returned
+func SanitizeFile(keys []string, input string) string {
+	output := input
 
-	flag.Parse()
-
-	// Err should be nil unless something is wrong
-	err = nil
-
-	if keyFile == "" || inFile == "" {
-		err = fmt.Errorf("The key and input file parameters must be specified")
-		return
+	// Call Sanitize for every key and save the result
+	for _, key := range keys {
+		output = Sanitize(strings.ToUpper(key), strings.ToLower(key), output)
 	}
 
-	// Validate the required files exist
-	if !validateFile(keyFile) {
-		err = fmt.Errorf("Unknown key file specified: %s", keyFile)
-	} else if !validateFile(inFile) {
-		err = fmt.Errorf("Unknown input file specified: %s", inFile)
-	}
-
-	return
+	// output should now be sanitized
+	return output
 }
 
-// validateFile will check if a file at the specified path exists
-func validateFile(path string) bool {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return false
+// Sanitize will remove any instances of key (case agnostic) from input
+func Sanitize(keyU string, keyL string, input string) string {
+	var sb strings.Builder
+
+	// Loop over the input string
+	for i := 0; i <= len(input)-len(keyL); i++ {
+		if keyL[0] == input[i] || keyU[0] == input[i] {
+			keystart := i
+			keyend := i
+
+			// Loop over the input to validate if we found the key
+			for j := 1; j < len(keyL); j++ {
+				if keyL[j] == input[i+j] || keyU[j] == input[i+j] {
+					keyend = i + j
+				} else {
+					break
+				}
+			}
+
+			// Check if we found the key
+			if keyend-keystart == len(keyL)-1 {
+
+				// Key found, build the output string
+				sb.WriteString(input[0:keystart])
+				sb.WriteString(REPLACEMENT_STR)
+
+				// Call sanitize on the remaining substring
+				sb.WriteString(Sanitize(keyU, keyL, input[keyend+1:]))
+
+				return sb.String()
+			}
+		}
 	}
 
-	return true
+	// if we get here, the key did not exist in the string so just return the original string
+	return input
 }
