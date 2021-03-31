@@ -18,16 +18,24 @@ func main() {
 	// last argument should be the file name to be processed
 	phrases = append(phrases, os.Args[1:len(os.Args)-1]...)
 
-	// Sanitize the phrases (to-lower and remove trailing commas)
+	// Sanitize the phrases (remove trailing commas, check for invalid phrases)
 	for i, phrase := range phrases {
 		// Check for trailing comma
 		if phrase[len(phrase)-1] == ',' {
 			phrase = phrase[:len(phrase)-1] // Strip the last character
 		}
 
-		// Verify someone isn't trying to dupe us by providing the replacement string as a key
-		if strings.ToUpper(phrase) == REPLACEMENT_STR {
-			log.Fatalf("The replacement string \"%s\" can not be used as a key in any combination of capitalization", REPLACEMENT_STR)
+		// Make sure a phrase of all X's didn't get passed in
+		isValidPhrase := false
+		for i := range phrase {
+			if phrase[i] != REPLACEMENT_STR[0] {
+				isValidPhrase = true
+				break
+			}
+		}
+
+		if !isValidPhrase {
+			log.Fatalf("Invalid replacement requested: \"%s\"", phrase)
 		}
 
 		phrases[i] = phrase
